@@ -1,0 +1,162 @@
+version: '3.1'
+services:
+
+  unifi:
+    container_name: unifi
+    restart: unless-stopped
+    image: linuxserver/unifi
+    volumes:
+      - /srv/docker/unifi:/config
+    environment:
+      - PGID=0
+      - PUID=0
+      - ES_JAVA_OPTS='-Xms2g -Xmx2g'
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+      - "8443:8443"
+      - "8843:8843"
+      - "8880:8880"
+      - "3478:3478"
+
+  syncthing:
+    container_name: hass-sync
+    restart: unless-stopped
+    image: linuxserver/syncthing
+    volumes:
+      - /srv/docker/syncthing:/config
+      - /srv/docker/hass-config:/sync
+      - /etc/localtime:/etc/localtime:ro
+    network_mode: host
+    environment:
+      - PGID=0
+      - PUID=0
+
+  mqtt:
+    container_name: MQTT
+    restart: unless-stopped
+    image: eclipse-mosquitto
+    privileged: true
+    volumes:
+      - /srv/docker/mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf
+      - /srv/docker/mosquitto/log:/mosquitto/log
+      - /srv/docker/mosquitto/data:/mosquitto/data
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "1883:1883"
+      - "9001:9001"
+
+  mongo:
+    container_name: mongo
+    restart: unless-stopped
+    image: mongo
+    volumes:
+      - /srv/docker/mongo:/data/db
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "27017:27017"
+
+  hadockermon:
+    container_name: ha-dockermon
+    restart: unless-stopped
+    image: philhawthorne/ha-dockermon
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /srv/docker/ha-dockermon:/config
+    ports:
+      - "8126:8126"
+
+  # MariaDB
+  mariadb:
+    image: mariadb/server:10.3
+    container_name: mariadb
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD}"
+      MYSQL_DATABASE: ha_db
+      MYSQL_USER: homeassistant
+      MYSQL_PASSWORD: "${HA_MYSQL_PASSWORD}"
+    user: "${LOCAL_USER}:${LOCAL_USER}"
+    volumes:
+      # Local path where the database will be stored.
+      - <local db path>:/var/lib/mysql
+    ports:
+      - "3306:3306"
+
+  postdb1:
+    container_name: postdb1
+    restart: unless-stopped
+    image: postgres:10.6
+    volumes:
+      - /srv/docker/postdb1:/var/lib/postgresql/data
+      - /etc/localtime:/etc/localtime:ro
+    environment:
+      - POSTGRES_USER='hass'
+      - POSTGRES_PASSWORD='mysupersecretpassword'
+    ports:
+      - "5432:5432"
+
+  influxdb:
+    container_name: influxdb
+    restart: unless-stopped
+    image: influxdb
+    volumes:
+      - /srv/docker/influxdb/influxdb.conf:/etc/influxdb/influxdb.conf:ro
+      - /srv/docker/influxdb/db:/var/lib/influxdb
+    environment:
+      - INFLUX_GRAPHITE_ENABLED='true'
+    ports:
+      - "8086:8086"
+
+  grafana:
+    container_name: grafana
+    restart: unless-stopped
+    image: grafana/grafana
+    depends_on:
+      - "influxdb"
+    volumes:
+      - /srv/docker/grafana:/var/lib/grafana
+    ports:
+      - "3000:3000"
+
+  chronograf:
+    container_name: chronograf
+    restart: unless-stopped
+    image: chronograf
+    depends_on:
+      - "influxdb"
+    volumes:
+      - /srv/docker/chronograf:/var/lib/chronograf
+    ports:
+      - "8888:8888"
+
+  homeassistant:
+    container_name: home-assistant
+    restart: unless-stopped
+    image: homeassistant/home-assistant
+    depends_on:
+      - "influxdb"
+      - "postdb1"
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0
+    volumes:
+      - /srv/docker/hass-config:/config
+      - /etc/localtime:/etc/localtime:ro
+      - /srv/docker/hass_media:/media
+    network_mode: host
+    privileged: true
+
+  nodered1:
+    container_name: node-red-1
+    restart: unless-stopped
+    image: nodered/node-red-docker:v8
+    depends_on:
+      - "homeassistant"
+    user: "${LOCAL_USER}:${LOCAL_USER}"
+    volumes:
+      - /srv/docker/node-red-1/user:/data
+      - /etc/localtime:/etc/localtime:ro
+      - /root/.ssh:/root/.ssh:ro
+    ports:
+      - "1880:1880"
+

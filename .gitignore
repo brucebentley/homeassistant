@@ -1,0 +1,8 @@
+.DS_Store
+*secret*
+*.env
+*.key
+*.pem
+
+config/*
+!config/.gitkeep
